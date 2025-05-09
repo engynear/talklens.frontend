@@ -10,6 +10,7 @@ export interface TelegramAccount {
     phone: string;
     isActive: boolean;
     sessionId: string;
+    id?: string;
 }
 
 export interface TelegramSessionResponse {
@@ -23,4 +24,5 @@ export interface TelegramContact {
     id: number;
     first_name: string;
     last_name: string | null;
+    interlocutorId?: number;
 } 

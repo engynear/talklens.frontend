@@ -66,6 +66,17 @@ export function triggerSidebarRefresh() {
     sidebarRefreshTrigger.update(count => count + 1);
 }
 
+// Интерфейс для сессии Telegram
+interface TelegramSession {
+    phoneNumber: string;
+    telegramUserId: string | null;
+    id: string;
+    sessionId: string;
+    sessionType: string;
+    createdAt: string;
+    lastActivityAt: string;
+}
+
 // Функция для добавления нового телефона
 export function addTelegramAccount(phone: string, sessionId: string) {
     const account: TelegramAccount = {
@@ -96,66 +107,6 @@ export function addTelegramAccount(phone: string, sessionId: string) {
     });
 }
 
-// Функция для проверки статуса аккаунта
-async function checkAccountStatus(sessionId: string): Promise<TelegramSessionResponse> {
-    const response = await fetch(`/api/telegram/status/${sessionId}`, {
-        method: 'GET',
-        credentials: 'include'
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to check account status');
-    }
-
-    return await response.json();
-}
-
-// Функция для проверки статусов всех аккаунтов
-export async function checkAllAccountsStatus() {
-    const accounts = get(telegramAccounts);
-    const statusPromises = accounts.map(async (account) => {
-        try {
-            const status = await checkAccountStatus(account.sessionId);
-            return {
-                phone: account.phone,
-                sessionId: account.sessionId,
-                status: status.status
-            };
-        } catch (error) {
-            console.error(`Failed to check status for account ${account.phone}:`, error);
-            return {
-                phone: account.phone,
-                sessionId: account.sessionId,
-                status: 'Failed' as TelegramSessionStatus
-            };
-        }
-    });
-
-    const statuses = await Promise.all(statusPromises);
-
-    telegramAccounts.update(accounts => {
-        return accounts.map(account => {
-            const accountStatus = statuses.find(s => s.phone === account.phone);
-            return {
-                ...account,
-                isActive: accountStatus?.status === 'Success'
-            };
-        });
-    });
-
-    // Если текущий выбранный аккаунт неактивен, попробуем выбрать другой активный
-    const currentAccount = get(selectedTelegramAccount);
-    if (currentAccount && !currentAccount.isActive) {
-        const activeAccount = get(telegramAccounts).find(a => a.isActive);
-        if (activeAccount) {
-            await selectTelegramAccount(activeAccount.phone, activeAccount.sessionId);
-        } else {
-            selectedTelegramAccount.set(null);
-            clearContacts();
-        }
-    }
-}
-
 // Функция для загрузки активных сессий
 export async function loadActiveSessions() {
     try {
@@ -168,24 +119,17 @@ export async function loadActiveSessions() {
             throw new Error('Failed to load active sessions');
         }
 
-        const sessions: TelegramSessionResponse[] = await response.json();
+        const sessions = await response.json() as TelegramSession[];
         
-        // Обновляем список аккаунтов, добавляя новые сессии
-        telegramAccounts.update(accounts => {
-            sessions.forEach(session => {
-                if (session.phoneNumber && session.sessionId) {
-                    const existingAccount = accounts.find(a => a.sessionId === session.sessionId);
-                    if (!existingAccount) {
-                        accounts.push({
-                            phone: session.phoneNumber,
-                            isActive: session.status === 'Success',
-                            sessionId: session.sessionId
-                        });
-                    }
-                }
-            });
-            return accounts;
-        });
+        // Очищаем список аккаунтов и заполняем его новыми данными
+        telegramAccounts.set(
+            sessions.map((session: TelegramSession) => ({
+                phone: session.phoneNumber,
+                isActive: true,
+                sessionId: session.sessionId,
+                id: session.id
+            }))
+        );
     } catch (error) {
         console.error('Error loading active sessions:', error);
     }
@@ -194,57 +138,31 @@ export async function loadActiveSessions() {
 // Функция для инициализации при загрузке страницы
 export async function initializeAccounts() {
     await loadActiveSessions();
-    await checkAllAccountsStatus();
     
     const currentAccount = get(selectedTelegramAccount);
     if (!currentAccount) {
-        // Если нет выбранного аккаунта, выбираем первый активный
+        // Если нет выбранного аккаунта, выбираем первый
         const accounts = get(telegramAccounts);
-        const activeAccount = accounts.find(a => a.isActive);
-        if (activeAccount) {
-            await selectTelegramAccount(activeAccount.phone, activeAccount.sessionId);
+        if (accounts.length > 0) {
+            // Просто устанавливаем аккаунт, но не загружаем контакты
+            const account = accounts[0];
+            selectedTelegramAccount.set({
+                ...account,
+                isActive: true
+            });
         }
-    } else if (currentAccount.isActive) {
-        // Если есть выбранный активный аккаунт, загружаем его контакты
-        await loadTelegramContacts(currentAccount.sessionId);
     }
+    // Убираем автоматическую загрузку контактов при инициализации
 }
 
-// Обновляем функцию выбора аккаунта
+// Функция выбора аккаунта
 export async function selectTelegramAccount(phone: string, sessionId: string) {
-    try {
-        const status = await checkAccountStatus(sessionId);
-        
-        telegramAccounts.update(accounts => {
-            return accounts.map(account => {
-                if (account.phone === phone) {
-                    account.isActive = status.status === 'Success';
-                }
-                return account;
-            });
-        });
-
-        if (status.status === 'Success') {
-            const account = get(telegramAccounts).find(a => a.phone === phone);
-            if (account) {
-                selectedTelegramAccount.set(account);
-                await loadTelegramContacts(sessionId);
-            }
-        } else {
-            console.log(`Account ${phone} status check failed: ${status.status}`);
-            if (status.error) {
-                console.log(`Error details: ${status.error}`);
-            }
-        }
-    } catch (error) {
-        console.error('Failed to check account status:', error);
-        telegramAccounts.update(accounts => {
-            return accounts.map(account => {
-                if (account.phone === phone) {
-                    account.isActive = false;
-                }
-                return account;
-            });
+    const account = get(telegramAccounts).find(a => a.phone === phone);
+    if (account) {
+        selectedTelegramAccount.set({
+            ...account,
+            isActive: true,
+            sessionId
         });
     }
 }
@@ -274,6 +192,13 @@ export async function loadTelegramContacts(sessionId: string) {
 
 // Функция для выбора контакта
 export function selectContact(contact: TelegramContact) {
+    console.log('[Stores] Selecting contact:', contact);
+    
+    // Проверка на полноту данных контакта
+    if (contact && contact.first_name === 'Контакт' && !contact.last_name) {
+        console.log('[Stores] Contact info incomplete, will try to enrich later');
+    }
+    
     selectedContact.set(contact);
     // После выбора контакта перенаправляем на дашборд используя goto
     goto('/dashboard');

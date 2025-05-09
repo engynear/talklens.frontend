@@ -13,14 +13,14 @@ interface ContactResponse {
     last_seen: string;
 }
 
-export const GET: RequestHandler = async ({ cookies, url }) => {
+export const GET: RequestHandler = async ({ cookies, params, url }) => {
     try {
         const token = cookies.get('auth_token');
         if (!token) {
             return json({ error: 'Не авторизован' }, { status: 401 });
         }
 
-        const sessionId = url.searchParams.get('sessionId');
+        const sessionId = params.sessionId;
         if (!sessionId) {
             return json({ error: 'Не указан sessionId' }, { status: 400 });
         }

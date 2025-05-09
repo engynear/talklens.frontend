@@ -4,7 +4,8 @@ import { COLLECTOR_API_URL } from '$lib/config';
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
     try {
-        const { sessionId, interlocutorId } = await request.json();
+        const body = await request.json();
+        const { sessionId, interlocutorId } = body;
         const token = cookies.get('auth_token');
         
         if (!token) {
@@ -15,15 +16,20 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
             return json({ error: 'Не указан sessionId или interlocutorId' }, { status: 400 });
         }
         
-        console.log(`Отписка от чата: sessionId=${sessionId}, interlocutorId=${interlocutorId}`);
+        console.log(`Отписка от чата: sessionId=${sessionId}, interlocutorId=${interlocutorId}`, body);
         
         const response = await fetch(
-            `${COLLECTOR_API_URL}/auth/telegram/sessions/${sessionId}/interlocutors/${interlocutorId}/unsubscribe`, 
+            `${COLLECTOR_API_URL}/sessions/telegram/subscriptions`, 
             {
-                method: 'POST',
+                method: 'DELETE',
                 headers: {
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
-                }
+                },
+                body: JSON.stringify({
+                    sessionId,
+                    interlocutorId
+                })
             }
         );
         

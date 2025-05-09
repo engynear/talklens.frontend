@@ -9,7 +9,7 @@ export const GET: RequestHandler = async ({ fetch, cookies, params }) => {
         return json({ error: 'Не авторизован' }, { status: 401 });
     }
 
-    const response = await fetch(`${COLLECTOR_API_URL}/auth/telegram/sessions/${sessionId}/subscribed`, {
+    const response = await fetch(`${COLLECTOR_API_URL}/sessions/telegram/${sessionId}/subscriptions`, {
         headers: {
             'Authorization': `Bearer ${token}`
         }

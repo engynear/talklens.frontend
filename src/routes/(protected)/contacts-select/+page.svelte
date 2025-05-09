@@ -15,7 +15,8 @@
         if (!$selectedTelegramAccount) return;
         
         try {
-            const response = await fetch(`/api/telegram/subscribed?sessionId=${$selectedTelegramAccount.sessionId}`);
+            // На странице выбора контактов мы хотим обогатить подписки данными из контактов
+            const response = await fetch(`/api/telegram/subscribed/${$selectedTelegramAccount.sessionId}?loadContacts=true`);
             
             if (response.ok) {
                 subscribedChats = await response.json();
@@ -48,7 +49,24 @@
             return;
         }
         
-        await loadSubscribedChats();
+        isLoading = true;
+        
+        try {
+            // Явно загружаем контакты только когда находимся на странице выбора контактов
+            const contactsResponse = await fetch(`/api/telegram/contacts?sessionId=${$selectedTelegramAccount.sessionId}`);
+            if (contactsResponse.ok) {
+                const contacts = await contactsResponse.json();
+                telegramContacts.set(contacts);
+                console.log('[Contacts Select] Loaded contacts:', contacts.length);
+            }
+            
+            // Загружаем подписанные чаты
+            await loadSubscribedChats();
+        } catch (error) {
+            console.error('Error initializing contacts page:', error);
+        } finally {
+            isLoading = false;
+        }
     });
 
     async function subscribeToContact(contact: TelegramContact) {

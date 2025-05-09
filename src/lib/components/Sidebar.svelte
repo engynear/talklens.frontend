@@ -8,20 +8,65 @@
     let subscribedChats: TelegramContact[] = [];
     let unsubscribingId: number | null = null;
 
-    // Функция для получения списка подписанных чатов
-    async function loadSubscribedChats() {
+    // Оптимизировать кэширование и загрузку данных
+    let loadingSubscribedChats = false;
+    let lastLoadedSessionId: string | null = null; 
+    let lastCacheTime = 0;
+
+    // Параметры кэширования
+    const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+    const CONTACTS_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 часа
+
+    async function loadSubscribedChats(forceRefresh = false) {
         if (!$selectedTelegramAccount) return;
         
+        const now = Date.now();
+        const shouldRefreshCache = (now - lastCacheTime) > CACHE_TTL || forceRefresh;
+        
+        // Проверяем, не загружены ли уже чаты для этого сессии и не истек ли кэш
+        if (lastLoadedSessionId === $selectedTelegramAccount.sessionId && 
+            subscribedChats.length > 0 && 
+            !shouldRefreshCache) {
+            console.log('[Sidebar] Using cached subscribed chats for session:', lastLoadedSessionId);
+            return;
+        }
+        
+        // Блокируем повторные запросы во время загрузки
+        if (loadingSubscribedChats) {
+            console.log('[Sidebar] Already loading subscribed chats, skipping request');
+            return;
+        }
+        
+        loadingSubscribedChats = true;
+        
         try {
-            const response = await fetch(`/api/telegram/subscribed?sessionId=${$selectedTelegramAccount.sessionId}`);
+            console.log('[Sidebar] Loading subscribed chats for session:', $selectedTelegramAccount.sessionId);
+            
+            // Всегда запрашиваем обновление имен контактов, чтобы избежать проблем с "Контакт #ID"
+            const url = `/api/telegram/subscribed/${$selectedTelegramAccount.sessionId}?loadContacts=true`;
+            const response = await fetch(url);
             
             if (response.ok) {
                 subscribedChats = await response.json();
+                lastLoadedSessionId = $selectedTelegramAccount.sessionId;
+                lastCacheTime = now;
+                console.log('[Sidebar] Loaded', subscribedChats.length, 'subscribed chats');
+                
+                // Обновляем выбранный контакт если он существует
+                if ($selectedContact) {
+                    const updatedContact = subscribedChats.find(c => c.id === $selectedContact.id);
+                    if (updatedContact && updatedContact.first_name && updatedContact.first_name !== 'Контакт') {
+                        console.log('[Sidebar] Updating selected contact info:', updatedContact);
+                        selectedContact.set(updatedContact);
+                    }
+                }
             } else {
-                console.error('Failed to load subscribed chats');
+                console.error('[Sidebar] Failed to load subscribed chats:', await response.text());
             }
         } catch (error) {
-            console.error('Error loading subscribed chats:', error);
+            console.error('[Sidebar] Error loading subscribed chats:', error);
+        } finally {
+            loadingSubscribedChats = false;
         }
     }
 
@@ -87,7 +132,8 @@
 
     // Обновляем чаты при получении сигнала о необходимости обновления
     $: if ($sidebarRefreshTrigger) {
-        loadSubscribedChats();
+        console.log('[Sidebar] Refresh trigger received, forcing reload');
+        loadSubscribedChats(true); // Принудительное обновление
     }
 
     function getInitials(contact: TelegramContact): string {
